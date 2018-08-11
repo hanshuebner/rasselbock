@@ -1,62 +1,24 @@
-(in-package :user)
+(in-package :rasselbock)
 
 (eval-when (compile load eval)
-  (require 'INETDEF)
-  (require 'STARLET)
-  (require 'STARDEFQZ)
-  (require 'STARDEFFL))
-
-;; Size of I/O buffers to read and write TCP data
-(eval-when (compile load eval)
-  (defconstant +buffer-size+ 1024))
-
-;; Maximum size of one HTTP header
-(defconstant +header-buffer-size+ 16384)
-
-;; Maximum number of HTTP headers
-(defconstant +header-count+ 32)
-
-;; Maximum number of pending incoming connections
-(defconstant +server-backlog+ 5)
-
-;; HTTP version to report in responses
-(defconstant +response-http-version+ "HTTP/1.0")
-
-(define-alien-structure iosb
-  (status :unsigned-integer 0 2)
-  (bytecnt :unsigned-integer 2 4)
-  (details :pointer 4 8))
+  (require 'parameters)
+  (require 'inetdef)
+  (require 'starlet)
+  (require 'stardeffl)
+  (require 'vms)
+  (require 'response)
+  (require 'files))
 
 (define-alien-structure sockchar
   (prot :unsigned-integer 0 2)
   (type :unsigned-integer 2 3)
   (af :unsigned-integer 3 4))
 
-(define-alien-structure itemlst-2
-  (length :unsigned-integer 0 2)
-  (type :unsigned-integer 2 4 :default 0)
-  (address :pointer 4 8))
-
-(define-alien-structure itemlst-3
-  (length :unsigned-integer 0 2)
-  (type :unsigned-integer 2 4 :default 0)
-  (address :pointer 4 8)
-  (retlen :pointer 8 12 :default 0))
-
 (define-alien-structure sockaddr-in
   (SIN$W_FAMILY :unsigned-integer 0 2 :default 0)
   (SIN$W_PORT :unsigned-integer 2 4 :default 0)
   (SIN$L_ADDR :unsigned-integer 4 8 :default 0)
   (SIN$T_ZERO :unsigned-integer 8 16 :default 0))
-
-(define-alien-structure string-buffer
-  (string :asciz 0 #.+buffer-size+))
-
-(define-alien-structure short
-  (value :unsigned-integer 0 2 :default 0))
-
-(define-alien-structure long
-  (value :unsigned-integer 0 4 :default 0))
 
 (define-external-routine (UCX$INET_ADDR
                              :file "UCX$IPC_SHR"
@@ -65,103 +27,6 @@
   (address-string :lisp-type string
                   :vax-type :asciz
                   :access :in))
-
-(defmacro doplist ((key value plist) &body body)
-  (let ((current (gensym)))
-    `(let ((,current ,plist))
-       (loop
-         (if ,current
-             (let ((,key (first ,current))
-                   (,value (second ,current)))
-               ,@body
-               (setf ,current (cddr ,current)))
-             (return))))))
-
-(defun swab (in)
-  (let ((out 0))
-    (setf (ldb (byte 8 0) out) (ldb (byte 8 8) in)
-          (ldb (byte 8 8) out) (ldb (byte 8 0) in))
-    out))
-
-(defun format-ip-address (address)
-  (format nil "~D.~D.~D.~D"
-          (ldb (byte 8 0) address)
-          (ldb (byte 8 8) address)
-          (ldb (byte 8 16) address)
-          (ldb (byte 8 24) address)))
-
-(defun successp (status)
-  (plusp (logand status sts$m_success)))
-
-(defun get-message (status)
-  (let* ((string-length 1024)
-         (buffer (make-string string-length))
-         (status (call-out SYS$GETMSG
-                           status
-                           string-length
-                           buffer
-                           15 ; macro default
-                           nil)))
-    (if (successp status)
-        buffer
-        (format nil "could not find message for status 0x~X" status))))
-
-(defun check-status (status caller)
-  (unless (successp status)
-    (error (format nil "Error in ~A:~%~A"
-                   caller
-                   (get-message status)))))
-
-(defmacro c (&rest call)
-  (let ((status (gensym)))
-    `(let ((,status (call-out ,@call)))
-       (check-status ,status ',call))))
-
-(defmacro $QIOW (chan func iosb
-                      &key
-                      (efn 0)
-                      astadr
-                      astprm
-                      p1 p2 p3 p4 p5 p6)
-  `(c SYS$QIOW
-      ,efn ,chan ,func ,iosb ,astadr ,astprm
-      ,p1 ,p2 ,p3 ,p4 ,p5 ,p6))
-
-(defmacro $QIOW/check-iosb (chan func
-                                 &key
-                                 (efn 0)
-                                 astadr
-                                 astprm
-                                 p1 p2 p3 p4 p5 p6)
-  (let ((iosb (gensym)))
-    `(let ((,iosb (make-iosb :allocation :static)))
-       (c SYS$QIOW
-          ,efn ,chan ,func ,iosb ,astadr ,astprm
-          ,p1 ,p2 ,p3 ,p4 ,p5 ,p6)
-       (check-status (iosb-status ,iosb) ',func))))
-
-(defun quote-string (string)
-  (with-output-to-string (*standard-output*)
-    (let (in-printable-p)
-      (dotimes (i (length string))
-        (let ((char (aref string i)))
-          (if (graphic-char-p char)
-              (progn
-                (unless in-printable-p
-                  (setf in-printable-p t)
-                  (unless (zerop i)
-                    (write-char #\space))
-                  (write-char #\"))
-                (write-char char))
-              (progn
-                (when in-printable-p
-                  (setf in-printable-p nil)
-                  (write-char #\"))
-                (unless (zerop i)
-                  (write-char #\space))
-                (format t "#\\~:(~A~)" (char-name char))))))
-      (when in-printable-p
-        (write-char #\")))))
 
 (defstruct raw-request
   (lines (make-array +header-count+ :fill-pointer 0))
@@ -187,12 +52,6 @@
                               (get-output-stream-string *standard-output*))
                             t
                             chars-read)))))))
-
-(defun whitespacep (c)
-  (or (eq c #\space)
-      (eq c #\tab)
-      (eq c #\linefeed)
-      (eq c #\return)))
 
 (defun raw-request-add-buffer (raw-request new-buffer)
   (assert (not (raw-request-completep raw-request)))
@@ -231,9 +90,6 @@
                                    (raw-request-lines raw-request))
                 (error "Too many header lines (max ~A)"
                        +header-count+))))))))
-
-(defun make-keyword (string)
-  (intern (string-upcase string) :keyword))
 
 (defun parse-request-line (line)
   (let* ((uri-position (position #\space line))
@@ -282,44 +138,6 @@
        (unless (zerop ,channel)
          (c SYS$DASSGN ,channel)))))
 
-(defun tcp-test-client (&key (ip-address "172.16.101.128") (port 2002))
-  (with-ucx-channel (channel)
-
-    ;; Open TCP socket
-    ($QIOW/check-iosb channel IO$_SETMODE
-                      :p1 (make-sockchar :allocation :static
-                                         :prot TCPIP$C_TCP
-                                         :type TCPIP$C_STREAM
-                                         :af TCPIP$C_AF_INET))
-
-    ;; Establish connection
-    (let* ((sockaddr-in (make-sockaddr-in :allocation :static
-                                          :SIN$W_FAMILY INET$C_AF_INET
-                                          :SIN$W_PORT (swab port)
-                                          :SIN$L_ADDR (call-out UCX$INET_ADDR ip-address))))
-      ($QIOW/check-iosb channel IO$_ACCESS
-                        :p3 (make-itemlst-2 :allocation :static
-                                            :length (alien-structure-length sockaddr-in)
-                                            :address sockaddr-in)))
-
-    ;; Send some data
-    (let* ((message (format nil "Hello world!~C~C" #\Return #\Linefeed))
-           (buffer (make-string-buffer :allocation :static
-                                       :string message)))
-      ($QIOW/check-iosb channel IO$_WRITEVBLK
-                        :p1 buffer :p2 (length message)))
-
-    ;; Receive some data
-    (let* ((buffer (make-string-buffer :allocation :static))
-           (iosb (make-iosb :allocation :static)))
-
-      ($QIOW channel IO$_READVBLK iosb
-             :p1 buffer
-             :p2 +buffer-size+)
-      (check-status (iosb-status iosb) 'IO$_READVBLK)
-      (write-string (quote-string (string-buffer-string buffer)))
-      (terpri))))
-
 (defun setup-listen-socket (channel port)
   ;; Open TCP socket
   ($QIOW/check-iosb channel IO$_SETMODE
@@ -355,16 +173,11 @@
   ($QIOW/check-iosb channel IO$_SETMODE
                     :p4 +server-backlog+))
 
-(defstruct response
-  (status 200)
-  (status-string "OK")
-  (header `(:server "VAX LISP HTTP Server 0.0"))
-  body)
-
 (defun dispatch-request (request)
-  (make-response :status 404
-                 :status-string "Not found"
-                 :body "The requested resource was not found"))
+  (or (route-as-file request)
+      (make-response :status 404
+                     :status-string "Not found"
+                     :body "The requested resource was not found")))
 
 (defvar *last-raw-request* nil)
 
@@ -391,7 +204,7 @@
   ;; Send response status and header
   (with-output-to-string (*standard-output*)
     (format t "~A ~D ~A~C~C"
-            +response-http-version+
+            *response-http-version*
             (response-status response)
             (response-status-string response)
             #\Return #\Linefeed)
@@ -403,10 +216,7 @@
                             (get-output-stream-string *standard-output*))))
 
 (defun write-response-body (channel response)
-  (etypecase (response-body response)
-    (string 
-        (write-string-to-socket channel
-                                (response-body response)))))
+  (funcall (response-write-body response) channel (response-body response)))
 
 (defun process-request (channel)
   (let* ((request (read-request channel))

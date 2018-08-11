@@ -1,3 +1,5 @@
+(in-package :rasselbock)
+
 (proclaim '(optimize (speed 3) (safety 0)))
  
 ;;;*** MODULE STARLET ***

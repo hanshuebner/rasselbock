@@ -1,3 +1,5 @@
+(in-package :rasselbock)
+
 (defconstant ARP$M_IN_USE #x1)
 (defconstant ARP$M_COM #x2)
 (defconstant ARP$M_PERM #x4)

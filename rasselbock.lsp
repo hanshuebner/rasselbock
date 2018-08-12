@@ -1,4 +1,4 @@
-(in-package :rasselbock)
+(in-package :rasselbock :use '(:lisp :sys))
 
 (eval-when (compile load eval)
   (require 'parameters)
@@ -7,7 +7,7 @@
   (require 'stardeffl)
   (require 'vms)
   (require 'response)
-  (require 'files))
+  (require 'file-response))
 
 (define-alien-structure sockchar
   (prot :unsigned-integer 0 2)

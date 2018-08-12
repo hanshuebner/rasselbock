@@ -1,5 +1,8 @@
 (in-package :rasselbock)
 
+(eval-when (compile load eval)
+  (load 'parameters))
+
 (define-alien-structure iosb
   (status :unsigned-integer 0 2)
   (bytecnt :unsigned-integer 2 4)

@@ -1,12 +1,33 @@
 (in-package :rasselbock)
 
-(provide 'files)
+(provide 'file-response)
 
 (eval-when (compile load eval)
   (require 'rmsdef)
   (require 'rmsusr)
   (require 'utils)
+  (require 'vms)
   (require 'response))
+
+;; Document root directory
+(defparameter *document-root* nil)
+
+(defun ensure-document-root ()
+  (unless *document-root*
+    (setf *document-root*
+          (pathname
+              (or (first (translate-logical-name "rasselbock$document_root"))
+                  (progn
+                    (warn "rasselbock$document_root not defined, serving files from ~A"
+                          (namestring (default-directory)))
+                    (default-directory)))))))
+
+(defun document-root ()
+  (c sys$dclast
+     common-ast-address
+     (instate-interrupt-function #'ensure-document-root :once-only-p t)
+     0)
+  *document-root*)
 
 (defmacro with-file-information ((file &rest fields) &body body)
   (let ((keywords (mapcar #'make-keyword fields))
@@ -126,11 +147,12 @@ type to report to the client."
           :name (subseq uri (1+ slash-position) dot-position)
           :type (subseq uri (1+ dot-position))
           :directory (apply #'concatenate 'string
-                            (directory-namestring *document-root*)
+                            (directory-namestring (document-root))
                             (when (plusp slash-position)
                               (list "."
                                     (substitute #\. #\/
-                                                (subseq uri 1 slash-position)))))))))
+                                                (subseq uri 1 slash-position)))))
+          :defaults (document-root)))))
 
 (defstruct (file-response (:include response
                                     (write-body #'write-file-response))))

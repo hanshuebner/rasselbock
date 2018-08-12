@@ -22,14 +22,5 @@
   (defconstant +server-backlog+ 5)
 
   ;; HTTP version to report in responses
-  (defparameter *response-http-version* "HTTP/1.0")
-
-  ;; Document root directory
-  (defparameter *document-root*
-                (pathname
-                    (or (first (translate-logical-name "rasselbock$document_root"))
-                        (progn
-                          (warn "rasselbock$document_root not defined, serving files from ~A"
-                                (namestring (default-directory)))
-                          (default-directory))))))
+  (defparameter *response-http-version* "HTTP/1.0"))
 

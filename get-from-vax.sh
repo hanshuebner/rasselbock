@@ -27,5 +27,5 @@ do
     perl -pe 's/\0//g' < $file > $repo_path/$file
 done
 
-cd $repo_dir
+cd $repo_path
 git status

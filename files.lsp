@@ -85,31 +85,30 @@ type to report to the client."
     (c SYS$CLOSE fab 0 0)))
 
 (defun write-text-file-to-socket (channel filename)
-  (let* ((buffer (make-string-buffer :allocation :static))
-         (p (alien-data buffer))
-         (i 0))
+  (let* ((buffer (make-array +buffer-size+
+                             :allocation :static
+                             :fill-pointer 0
+                             :adjustable t
+                             :element-type 'character)))
     (with-open-file (in filename)
-      (loop
-        (let ((line (read-line in nil)))
-          (when (null line)
-            (return))
-          (when (> (length line) (- +buffer-size+ 2))
-            (error "line in file ~A too long, cannot serve as text file" filename))
-          (when (> (+ i (length line) 2) +buffer-size+)
-            ($QIOW/check-iosb channel IO$_WRITEVBLK
-                              :p1 buffer
-                              :p2 i)
-            (setf i 0))
-          (setf (subseq p i) line)
-          (incf i (length line))
-          (setf (aref p i) #\return)
-          (incf i)
-          (setf (aref p i) #\linefeed)
-          (incf i)))
-      (when (plusp i)
-        ($QIOW/check-iosb channel IO$_WRITEVBLK
-                          :p1 buffer
-                          :p2 i)))))
+      (with-output-to-string (*standard-output* buffer)
+        (loop
+          (let ((line (read-line in nil)))
+            (when (null line)
+              (return))
+            (when (> (length line) (- +buffer-size+ 2))
+              (error "line in file ~A too long, cannot serve as text file" filename))
+            (when (> (+ (length buffer) (length line) 2) +buffer-size+)
+              ($QIOW/check-iosb channel IO$_WRITEVBLK
+                                :p1 buffer
+                                :p2 (length buffer))
+              (setf (fill-pointer buffer) 0)
+              (get-output-stream-string *standard-output*))
+            (format t "~A~C~C" line #\return #\linefeed)))))
+    (when (plusp (length buffer))
+      ($QIOW/check-iosb channel IO$_WRITEVBLK
+                        :p1 buffer
+                        :p2 (length buffer)))))
 
 (defun write-file-response (channel file)
   (funcall (if (file-textp file)

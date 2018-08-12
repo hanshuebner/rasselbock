@@ -165,17 +165,20 @@ type to report to the client."
           :name (subseq uri (1+ slash-position) dot-position)
           :type (subseq uri (1+ dot-position))
           :directory (make-subdirectory (document-root)
-                                        (substitute #\. #\/
-                                                    (subseq uri 1 slash-position)))
+                                        (when (plusp slash-position)
+                                          (substitute #\. #\/
+                                                      (subseq uri 1 slash-position))))
           :defaults (document-root)))))
 
 (defstruct (file-response (:include response
                                     (write-body #'write-file-response))))
 
 (defun route-as-file (request)
-  (let ((pathname (probe-file (uri-to-pathname (request-uri request)))))
+  (let* ((pathname (probe-file (uri-to-pathname (request-uri request))))
+         (file (file-information pathname)))
     (when pathname
       (make-file-response :status 200
                           :status-string "OK"
-                          :body (file-information pathname)))))
+                          :header (list :content-type (file-content-type file))
+                          :body file))))
 

@@ -208,10 +208,13 @@
             (response-status response)
             (response-status-string response)
             #\Return #\Linefeed)
+    (format t "Server: ~A~C~C"
+            *server-string* #\Return #\Linefeed)
     (doplist (key value (response-header response))
       (format t "~:(~A~): ~A~C~C"
               key value #\Return #\Linefeed))
     (format t "~C~C" #\Return #\Linefeed)
+    (finish-output *standard-output*)
     (write-string-to-socket channel
                             (get-output-stream-string *standard-output*))))
 

@@ -1,7 +1,7 @@
 (in-package :rasselbock)
 
 (eval-when (compile load eval)
-  (load 'parameters))
+  (load 'parameters :verbose nil :print nil))
 
 (define-alien-structure iosb
   (status :unsigned-integer 0 2)

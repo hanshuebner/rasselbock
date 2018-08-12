@@ -9,18 +9,36 @@
   (require 'vms)
   (require 'response))
 
-;; Document root directory
+(defun make-subdirectory (pathname subdirectory)
+  (apply #'concatenate 'string
+         (directory-namestring pathname)
+         (when subdirectory
+           (list "." subdirectory))))
+
+;; Document root directory - This is set at run time from either the logical
+;; name RASSELBOCK$DOCUMENT_ROOT or, if that is not defined, to the [.PUBLIC]
+;; subdirectory of the process' default directory.
 (defparameter *document-root* nil)
+
+(defun get-document-root ()
+  (let ((translations (translate-logical-name "RASSELBOCK$DOCUMENT_ROOT"))
+        (default-document-root (make-pathname
+                                   :directory (make-subdirectory 
+                                                  (default-directory) "PUBLIC"))))
+    (cond
+      ((> (length translations) 1)
+       (error "RASSELBOCK$DOCUMENT_ROOT translates to multiple directories, ~
+               which is not supported."))
+      ((= (length translations) 1)
+       (pathname (first translations)))
+      (t
+       (warn "RASSELBOCK$DOCUMENT_ROOT not defined, serving files from ~A"
+             (namestring default-document-root))
+       default-document-root))))
 
 (defun ensure-document-root ()
   (unless *document-root*
-    (setf *document-root*
-          (pathname
-              (or (first (translate-logical-name "rasselbock$document_root"))
-                  (progn
-                    (warn "rasselbock$document_root not defined, serving files from ~A"
-                          (namestring (default-directory)))
-                    (default-directory)))))))
+    (setf *document-root* (get-document-root))))
 
 (defun document-root ()
   (c sys$dclast
@@ -146,12 +164,9 @@ type to report to the client."
       (make-pathname
           :name (subseq uri (1+ slash-position) dot-position)
           :type (subseq uri (1+ dot-position))
-          :directory (apply #'concatenate 'string
-                            (directory-namestring (document-root))
-                            (when (plusp slash-position)
-                              (list "."
-                                    (substitute #\. #\/
-                                                (subseq uri 1 slash-position)))))
+          :directory (make-subdirectory (document-root)
+                                        (substitute #\. #\/
+                                                    (subseq uri 1 slash-position)))
           :defaults (document-root)))))
 
 (defstruct (file-response (:include response

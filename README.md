@@ -1,6 +1,6 @@
 # rasselbock - A http server written in VAX LISP
 
-![rasselbock](https://raw.githubusercontent.com/hanshuebner/rasselbock/master/rasselbock.jpg)
+![rasselbock](https://raw.githubusercontent.com/hanshuebner/rasselbock/master/public/rasselbock.jpg)
 
 rasselbock is a web server written in VAX LISP.  I wrote it for fun,
 to learn how to program in VAX LISP and in particular how to interface

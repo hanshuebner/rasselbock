@@ -1,3 +1,16 @@
+;; File responses
+
+;; Serving VMS files as http responses is not quite as straightforward as
+;; one would be used from Unix as one has to deal with the various file
+;; structures that the VMS file system provides.  We have to distinguish
+;; between binary and text files and treat them separately.  Binary files
+;; are sent to the client as-is, i.e. the data is read block-wise from
+;; the file and sent to the client unmodified.  As VAX LISP provides no
+;; facilities for efficient block-wise binary I/O, we're using the VMS
+;; Record Management System (RMS) directly.  For text files, we use the
+;; VAX LISP file I/O system and read files line-by-line and send them
+;; to the client with some intermediate buffering.
+
 (in-package :rasselbock)
 
 (provide 'file-response)
@@ -47,7 +60,14 @@
      0)
   *document-root*)
 
+;; Provide some syntactic sugar to make using the GET-FILE-INFORMATION
+;; function more pleasant.
+
 (defmacro with-file-information ((file &rest fields) &body body)
+  "Call GET-FILE-INFORMATION with FILE and FIELDS as arguments.  FIELDS
+   must be one or more symbols that will be bound during the evaluation of
+   BODY.  They specify what fields of file information should be retrieved
+   and are converted to keywords when GET-FILE-INFORMATION is invoked."
   (let ((keywords (mapcar #'make-keyword fields))
         (result (gensym)))
     `(let* ((,result (get-file-information ,file ,@keywords))
@@ -56,6 +76,7 @@
                       fields (mapcar #'make-keyword fields)))
        ,@body)))
 
+;; Map from file type (extension) to content type
 (defparameter *content-types* (list :jpg "image/jpeg"
                                     :jpeg "image/jpeg"
                                     :html "text/html"
@@ -69,6 +90,11 @@
     map))
 
 (defparameter *content-type-map* (make-content-type-map))
+
+;; The FILE structure contains information about the file being served.  When
+;; a request is found to refer to a file, the body field of the response
+;; returned by the file handler will contain a FILE structure that is then
+;; used when writing the body to the client.
 
 (defstruct file pathname size textp content-type)
 
@@ -97,6 +123,8 @@ type to report to the client."
                                          "application/binary")))))))
 
 (defun write-binary-file-to-socket (channel filename)
+  "Serve a binary file to the client, using RMS to read blocks of file data
+   directly into the buffer sent to the client using $QIOW."
   (let* ((namestring (namestring filename))
          (filename-buffer (make-filename-buffer :allocation :static
                                                 :filename namestring))
@@ -124,6 +152,12 @@ type to report to the client."
     (c SYS$CLOSE fab 0 0)))
 
 (defun write-text-file-to-socket (channel filename)
+  "Serve a text file to the client.  The file is read line-wise into a
+   statically allocated string buffer.  Whenever the buffer would be overflown
+   by the next line read from the file, it is flushed to the client.  This
+   is supposed to reduce the number of packets sent to the client under the
+   assumption that user-level buffering is cheaper than leaving this up to
+   the TCP stack."
   (let* ((buffer (make-array +buffer-size+
                              :allocation :static
                              :fill-pointer 0
@@ -150,6 +184,8 @@ type to report to the client."
                         :p2 (length buffer)))))
 
 (defun write-file-response (channel file)
+  "Write a file response body, dispatching to binary and text file writing
+   as appropriate."
   (funcall (if (file-textp file)
                #'write-text-file-to-socket
                #'write-binary-file-to-socket)
@@ -174,6 +210,8 @@ type to report to the client."
                                     (write-body #'write-file-response))))
 
 (defun route-as-file (request)
+  "If URI in the given REQUEST structure refers to a file in the file system,
+   return a FILE-RESPONSE structure."
   (let* ((pathname (probe-file (uri-to-pathname (request-uri request))))
          (file (file-information pathname)))
     (when pathname

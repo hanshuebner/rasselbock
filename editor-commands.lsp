@@ -1,3 +1,9 @@
+;; Editor extensions unrelated to the HTTP server itself
+
+;; In this file, you'll find some editor commands that I have implemented
+;; while writing the http server, to add some features that I am used to
+;; having from GNU Emacs.
+
 (in-package :editor)
 
 (define-command (delete-matching-lines-command

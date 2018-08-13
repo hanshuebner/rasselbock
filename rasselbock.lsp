@@ -1,3 +1,10 @@
+;; top-level http server functionality
+
+;; This file implements the top-level server functionality of the
+;; rasselbock http server.  Set up of the TCP listening socket, acceptance
+;; of incoming connections and reading of the client requests is implemented
+;; here.
+
 (in-package :rasselbock :use '(:lisp :sys))
 
 (eval-when (compile load eval)
@@ -217,8 +224,8 @@
 (defun handle-error-during-request (function-name
                                        error-signalling-function
                                        format &rest args)
-  (format *error-output* "~&Error processing client request: ~?~%"
-          format args)
+  (format *error-output* "~&~:(~A~) in function ~A processing client request: ~?~%"
+          error-signaling-function function-name format args)
   (throw 'error nil))
 
 (defun process-requests (channel client-sockaddr-in)

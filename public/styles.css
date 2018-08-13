@@ -1,0 +1,21 @@
+* {
+    font-family: Verdana;
+    font-size: 16pt;
+}
+body {
+    margin: 2em;
+}
+H1 {
+    font-family: Georgia, serif;
+    font-size: 180%;
+    font-weight: bold;
+}
+H2 {
+    font-family: Georgia, serif;
+    font-size: 130%;
+    font-weight: bold;
+}
+.bunny {
+    float: right;
+    margin-left: 1em;
+}

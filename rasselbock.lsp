@@ -6,8 +6,7 @@
   (require 'starlet)
   (require 'stardeffl)
   (require 'vms)
-  (require 'response)
-  (require 'file-response))
+  (require 'dispatch))
 
 (define-alien-structure sockchar
   (prot :unsigned-integer 0 2)
@@ -173,12 +172,6 @@
   ($QIOW/check-iosb channel IO$_SETMODE
                     :p4 +server-backlog+))
 
-(defun dispatch-request (request)
-  (or (route-as-file request)
-      (make-response :status 404
-                     :status-string "Not found"
-                     :body "The requested resource was not found")))
-
 (defvar *last-raw-request* nil)
 
 (defun read-request (channel)
@@ -221,11 +214,25 @@
 (defun write-response-body (channel response)
   (funcall (response-write-body response) channel (response-body response)))
 
-(defun process-request (channel)
-  (let* ((request (read-request channel))
-         (response (dispatch-request request)))
-    (write-response-status-and-header channel response)
-    (write-response-body channel response)))
+(defun handle-error-during-request (function-name
+                                       error-signalling-function
+                                       format &rest args)
+  (format *error-output* "~&Error processing client request: ~?~%"
+          format args)
+  (throw 'error nil))
+
+(defun process-requests (channel client-sockaddr-in)
+  (catch 'error
+    (let* ((*universal-error-handler* #'handle-error-during-request)
+           (request (read-request channel))
+           (response (dispatch-request request)))
+      (format t "~&~A ~A ~A ~A~%"
+              (format-ip-address (sockaddr-in-SIN$L_ADDR client-sockaddr-in))
+              (request-method request)
+              (request-uri request)
+              (response-status response))
+      (write-response-status-and-header channel response)
+      (write-response-body channel response))))
 
 (defun http-server (&key (port 2002))
   (with-ucx-channel (server-channel)
@@ -243,8 +250,4 @@
                                                 :address client-sockaddr-in
                                                 :retlen client-address-length)
                             :p4 client-channel)
-          (format t "~&connection established from ~A:~A~%"
-                  (format-ip-address (sockaddr-in-SIN$L_ADDR client-sockaddr-in))
-                  (swab (sockaddr-in-SIN$W_PORT client-sockaddr-in)))
-
-          (process-request channel))))))
+          (process-requests channel client-sockaddr-in))))))
